@@ -6,10 +6,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Show title and description
 st.title("🍽️ Nutritional Assistant")
@@ -137,9 +133,9 @@ else:
 def send_meal_plan_email(email, meal_plan):
     """Send the meal plan via email"""
     try:
-        # Email configuration
-        sender_email = os.getenv("EMAIL_USER")
-        sender_password = os.getenv("EMAIL_PASSWORD")
+        # Email configuration from Streamlit secrets
+        sender_email = st.secrets["email"]["user"]
+        sender_password = st.secrets["email"]["password"]
         
         # Create message
         msg = MIMEMultipart()
