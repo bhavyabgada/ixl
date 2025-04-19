@@ -19,13 +19,16 @@ A Streamlit application that serves as a personal nutritional assistant, helping
    ```bash
    pip install -r requirements.txt
    ```
-3. Create a `.env` file with your credentials:
+3. Create a `.streamlit/secrets.toml` file with your credentials:
+   ```toml
+   [email]
+   user = "your_email@gmail.com"
+   password = "your_app_specific_password"
+
+   [OPENAI_API_KEY]
+   key = "your_openai_api_key"
    ```
-   EMAIL_USER=your_email@gmail.com
-   EMAIL_PASSWORD=your_app_specific_password
-   ```
-4. Set up your OpenAI API key in Streamlit secrets
-5. Run the application:
+4. Run the application:
    ```bash
    streamlit run streamlit_app.py
    ```
@@ -40,7 +43,7 @@ To enable email notifications:
    - Security > 2-Step Verification
    - App Passwords
    - Generate a new app password for "Mail"
-4. Use this app password in your `.env` file
+4. Add your email credentials to the `.streamlit/secrets.toml` file
 
 ## Usage
 
