@@ -1,56 +1,169 @@
 import streamlit as st
 from openai import OpenAI
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime, timedelta
+import os
+from dotenv import load_dotenv
 
-# Show title and description.
-st.title("💬 Chatbot")
+# Load environment variables
+load_dotenv()
+
+# Show title and description
+st.title("🍽️ Nutritional Assistant")
 st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+    "Welcome to your personal nutritional assistant! I can help you plan meals, "
+    "suggest recipes, and create weekly meal plans based on your preferences and dietary needs."
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
+# Initialize session state variables
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "user_preferences" not in st.session_state:
+    st.session_state.user_preferences = {
+        "dietary_restrictions": [],
+        "allergies": [],
+        "favorite_cuisines": [],
+        "religious_restrictions": [],
+        "email": "",
+        "meal_preferences": {
+            "breakfast": True,
+            "lunch": True,
+            "dinner": True,
+            "snacks": True
+        }
+    }
+
+# Sidebar for user preferences
+with st.sidebar:
+    st.header("User Preferences")
+    
+    # Dietary Restrictions
+    st.subheader("Dietary Restrictions")
+    dietary_options = ["Vegetarian", "Vegan", "Gluten-Free", "Dairy-Free", "Keto", "Paleo"]
+    st.session_state.user_preferences["dietary_restrictions"] = st.multiselect(
+        "Select your dietary restrictions",
+        dietary_options
+    )
+    
+    # Allergies
+    st.subheader("Allergies")
+    allergy_options = ["Nuts", "Shellfish", "Eggs", "Soy", "Wheat", "Fish"]
+    st.session_state.user_preferences["allergies"] = st.multiselect(
+        "Select your allergies",
+        allergy_options
+    )
+    
+    # Cuisine Preferences
+    st.subheader("Favorite Cuisines")
+    cuisine_options = ["Italian", "Mexican", "Indian", "Chinese", "Mediterranean", "Japanese", "American"]
+    st.session_state.user_preferences["favorite_cuisines"] = st.multiselect(
+        "Select your favorite cuisines",
+        cuisine_options
+    )
+    
+    # Religious Restrictions
+    st.subheader("Religious Restrictions")
+    religious_options = ["Halal", "Kosher", "None"]
+    st.session_state.user_preferences["religious_restrictions"] = st.selectbox(
+        "Select your religious restrictions",
+        religious_options
+    )
+    
+    # Email for notifications
+    st.subheader("Email Notifications")
+    st.session_state.user_preferences["email"] = st.text_input(
+        "Enter your email for daily meal plans"
+    )
+    
+    # Meal Preferences
+    st.subheader("Meal Preferences")
+    st.session_state.user_preferences["meal_preferences"]["breakfast"] = st.checkbox("Breakfast", value=True)
+    st.session_state.user_preferences["meal_preferences"]["lunch"] = st.checkbox("Lunch", value=True)
+    st.session_state.user_preferences["meal_preferences"]["dinner"] = st.checkbox("Dinner", value=True)
+    st.session_state.user_preferences["meal_preferences"]["snacks"] = st.checkbox("Snacks", value=True)
+
+# Create OpenAI client
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 if not openai_api_key:
     st.info("Please add your OpenAI API key to continue.", icon="🗝️")
 else:
-
-    # Create an OpenAI client.
     client = OpenAI(api_key=openai_api_key)
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Display the existing chat messages via `st.chat_message`.
+    # Display chat messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
-
-        # Store and display the current prompt.
+    # Chat input
+    if prompt := st.chat_input("Ask me about nutrition, recipes, or meal planning..."):
+        # Store and display user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate a response using the OpenAI API.
+        # Prepare context for the AI
+        context = f"""
+        User Preferences:
+        - Dietary Restrictions: {', '.join(st.session_state.user_preferences['dietary_restrictions'])}
+        - Allergies: {', '.join(st.session_state.user_preferences['allergies'])}
+        - Favorite Cuisines: {', '.join(st.session_state.user_preferences['favorite_cuisines'])}
+        - Religious Restrictions: {st.session_state.user_preferences['religious_restrictions']}
+        - Meal Preferences: {', '.join([meal for meal, enabled in st.session_state.user_preferences['meal_preferences'].items() if enabled])}
+        """
+
+        # Generate response
         stream = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
+                {"role": "system", "content": f"You are a helpful nutritional assistant. Use this context about the user's preferences: {context}"},
+                {"role": "user", "content": prompt}
             ],
             stream=True,
         )
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
+        # Display assistant's response
         with st.chat_message("assistant"):
             response = st.write_stream(stream)
         st.session_state.messages.append({"role": "assistant", "content": response})
+
+        # If the user asked for a meal plan, send it via email
+        if "meal plan" in prompt.lower() and st.session_state.user_preferences["email"]:
+            send_meal_plan_email(st.session_state.user_preferences["email"], response)
+
+def send_meal_plan_email(email, meal_plan):
+    """Send the meal plan via email"""
+    try:
+        # Email configuration
+        sender_email = os.getenv("EMAIL_USER")
+        sender_password = os.getenv("EMAIL_PASSWORD")
+        
+        # Create message
+        msg = MIMEMultipart()
+        msg["From"] = sender_email
+        msg["To"] = email
+        msg["Subject"] = f"Your Daily Meal Plan - {datetime.now().strftime('%Y-%m-%d')}"
+        
+        # Add body
+        body = f"""
+        Hello!
+        
+        Here's your meal plan for today:
+        
+        {meal_plan}
+        
+        Enjoy your meals!
+        """
+        msg.attach(MIMEText(body, "plain"))
+        
+        # Send email
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+            
+        st.success("Meal plan sent to your email!")
+    except Exception as e:
+        st.error(f"Failed to send email: {str(e)}")
