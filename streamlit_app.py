@@ -7,6 +7,9 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import os
 
+# Initialize the OpenAI client
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 # Show title and description
 st.title("🍽️ Nutritional Assistant")
 st.write(
@@ -82,36 +85,30 @@ with st.sidebar:
     st.session_state.user_preferences["meal_preferences"]["dinner"] = st.checkbox("Dinner", value=True)
     st.session_state.user_preferences["meal_preferences"]["snacks"] = st.checkbox("Snacks", value=True)
 
-# Create OpenAI client
-openai_api_key = st.secrets["OPENAI_API_KEY"]
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-    client = OpenAI(api_key=openai_api_key)
+# Display chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Chat input
+if prompt := st.chat_input("Ask me about nutrition, recipes, or meal planning..."):
+    # Store and display user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    # Chat input
-    if prompt := st.chat_input("Ask me about nutrition, recipes, or meal planning..."):
-        # Store and display user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # Prepare context for the AI
+    context = f"""
+    User Preferences:
+    - Dietary Restrictions: {', '.join(st.session_state.user_preferences['dietary_restrictions'])}
+    - Allergies: {', '.join(st.session_state.user_preferences['allergies'])}
+    - Favorite Cuisines: {', '.join(st.session_state.user_preferences['favorite_cuisines'])}
+    - Religious Restrictions: {st.session_state.user_preferences['religious_restrictions']}
+    - Meal Preferences: {', '.join([meal for meal, enabled in st.session_state.user_preferences['meal_preferences'].items() if enabled])}
+    """
 
-        # Prepare context for the AI
-        context = f"""
-        User Preferences:
-        - Dietary Restrictions: {', '.join(st.session_state.user_preferences['dietary_restrictions'])}
-        - Allergies: {', '.join(st.session_state.user_preferences['allergies'])}
-        - Favorite Cuisines: {', '.join(st.session_state.user_preferences['favorite_cuisines'])}
-        - Religious Restrictions: {st.session_state.user_preferences['religious_restrictions']}
-        - Meal Preferences: {', '.join([meal for meal, enabled in st.session_state.user_preferences['meal_preferences'].items() if enabled])}
-        """
-
-        # Generate response
+    # Generate response
+    try:
         stream = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -129,6 +126,8 @@ else:
         # If the user asked for a meal plan, send it via email
         if "meal plan" in prompt.lower() and st.session_state.user_preferences["email"]:
             send_meal_plan_email(st.session_state.user_preferences["email"], response)
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
 
 def send_meal_plan_email(email, meal_plan):
     """Send the meal plan via email"""
